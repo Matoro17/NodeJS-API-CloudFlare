@@ -7,24 +7,59 @@
  *
  * Learn more at https://developers.cloudflare.com/workers/
  */
-
+const uuid = require("uuid")
 
 export default {
   async fetch(request, env) {
-    // Initialize your KV Namespace
-    const kvStore = env.data_test;
+    const kvStore = env.data_test
+    const TASKS = await kvStore.get("task_list")
+    if (TASKS == null){
+      await kvStore.put("task_list", JSON.stringify([]))
+    }
 
-    // Insert a new key-value pair
-    await kvStore.put("new_key", "new_value");
+    let task_list = JSON.parse(TASKS)
 
-    // You can also retrieve values from the KV store
-    const storedValue = await kvStore.get("new_key");
-    const storedValue2 = await kvStore.get("chave");
+    const url = new URL(request.url)
+    const path = url.pathname
 
-    return new Response(JSON.stringify(storedValue2, null, 2), {
-      headers: {
-        "content-type": "application/json;charset=UTF-8",
-      },
-    });
+    if (path.startsWith('/add')) {
+      const formData = await request.formData()
+      const task = await formData.get('task')
+      if (task) {
+        task_list.push({ text: task, completed: false })
+        await kvStore.put("task_list", JSON.stringify(task_list))
+      }
+      return new Response('Task added successfully', { status: 200 })
+    } else if (path.startsWith('/update')) {
+      const taskId = parseInt(url.searchParams.get('id'))
+      const isCompleted = url.searchParams.get('completed') === 'true'
+
+      if (!isNaN(taskId) && taskId >= 0 && taskId < TASKS.length) {
+        task_list[taskId].completed = isCompleted
+        await kvStore.put("task_list", JSON.stringify(task_list))
+        return new Response('Task updated successfully', { status: 200 })
+      } else {
+        return new Response('Invalid task ID', { status: 400 })
+      }
+    } else if (path.startsWith('/delete')) {
+      const taskId = parseInt(url.searchParams.get('id'))
+
+      if (!isNaN(taskId) && taskId >= 0 && taskId < TASKS.length) {
+        task_list.splice(taskId, 1)
+        await kvStore.put("task_list", JSON.stringify(task_list))
+        return new Response('Task deleted successfully', { status: 200 })
+      } else {
+        return new Response('Invalid task ID', { status: 400 })
+      }
+    } else if (path.startsWith('/tasks')) {
+      return new Response(JSON.stringify(task_list), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200,
+      })
+    } else {
+      const response = new Response('Not Found', { status: 404 })
+      return response
+    }
   },
-};
+}
+
